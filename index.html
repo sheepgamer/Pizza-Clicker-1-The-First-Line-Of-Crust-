@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PIZZA CLICKER: KING'S EMPIRE</title>
+    <style>
+        :root { --gold: #f1c40f; --tomato: #e74c3c; --crust: #e67e22; --dark: #0a0a0a; --neon: #2ecc71; --blue: #3498db; }
+        body { background: var(--dark); color: white; font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; overflow: hidden; user-select: none; }
+        
+        /* LAYOUT */
+        #game-container { display: none; grid-template-columns: 320px 1fr 350px; height: 100vh; }
+        .panel { background: #151515; border: 2px solid #333; margin: 5px; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+        .header { background: #222; padding: 10px; text-align: center; border-bottom: 2px solid var(--crust); font-weight: bold; color: var(--gold); font-size: 14px; }
+        
+        /* PIZZA AREA */
+        .main-view { display: grid; grid-template-rows: 1fr 200px; background: radial-gradient(circle, #222, #000); position: relative; }
+        #big-pizza { width: 300px; cursor: pointer; transition: 0.1s; filter: drop-shadow(0 0 30px rgba(230, 126, 34, 0.4)); }
+        #big-pizza:active { transform: scale(0.92); }
+
+        /* STOCK MARKET & MINIGAME */
+        #bottom-tabs { display: flex; background: #111; border-top: 2px solid #333; }
+        .tab-content { flex: 1; padding: 10px; display: none; overflow-y: auto; }
+        .active-tab { display: block; }
+        .tab-btn { flex: 1; padding: 10px; background: #222; border: none; color: #888; cursor: pointer; border-right: 1px solid #333; }
+        .tab-btn.active { background: #333; color: var(--gold); }
+
+        /* UPGRADES */
+        .scroll-area { flex: 1; overflow-y: auto; padding: 10px; }
+        .upgrade-card { background: #222; border: 1px solid #444; padding: 10px; margin-bottom: 8px; border-radius: 5px; cursor: pointer; }
+        .upgrade-card.affordable { border-left: 4px solid var(--neon); }
+        .upgrade-card.locked { opacity: 0.3; }
+
+        /* MINIGAME CANVAS */
+        #minigame-canvas { background: #000; border: 1px solid var(--gold); display: block; margin: 0 auto; cursor: crosshair; }
+
+        /* FLOATING TEXT */
+        .float { position: absolute; font-weight: bold; pointer-events: none; animation: floatUp 0.8s forwards; color: var(--gold); }
+        @keyframes floatUp { 0% { opacity:1; } 100% { opacity:0; transform:translateY(-100px); } }
+
+        /* INTRO */
+        #intro-overlay { position: fixed; inset: 0; background: black; z-index: 5000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .intro-text { width: 60%; font-size: 1.5rem; opacity: 0; transition: 1s; }
+    </style>
+</head>
+<body>
+
+    <div id="intro-overlay">
+        <div id="intro-content" class="intro-text"></div>
+        <button id="intro-btn" onclick="nextIntro()" style="display:none; margin-top:30px; padding:10px 20px; background:var(--tomato); border:none; color:white; cursor:pointer;">CONTINUE</button>
+    </div>
+
+    <div id="game-container">
+        <div class="panel">
+            <div class="header">PIZZA CITY TIMES</div>
+            <div id="news-wire" class="scroll-area" style="font-size: 11px; color: #2ecc71; font-family: monospace; background: #050505;"></div>
+            <div class="header">RESOURCES</div>
+            <div style="padding:15px;">
+                <h1 id="pizzas" style="margin:0; color:var(--gold);">0</h1>
+                <div style="font-size:12px; color:#888;">Debt: <span id="debt-display">50,000,000</span></div>
+                <div style="width:100%; height:8px; background:#333; margin:10px 0; border-radius:4px;"><div id="debt-bar" style="width:0%; height:100%; background:var(--tomato);"></div></div>
+                <p>PPS: <span id="pps">0</span> | PPC: <span id="ppc">1</span></p>
+            </div>
+        </div>
+
+        <div class="main-view">
+            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                <div id="big-pizza" onclick="clickPizza(event)">
+                    <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#e67e22"/><circle cx="50" cy="50" r="42" fill="#f1c40f"/><circle cx="30" cy="30" r="5" fill="#c0392b"/><circle cx="70" cy="40" r="6" fill="#c0392b"/><circle cx="50" cy="70" r="5" fill="#c0392b"/></svg>
+                </div>
+            </div>
+            
+            <div id="bottom-tabs-container">
+                <div id="bottom-tabs">
+                    <button class="tab-btn active" onclick="openTab('stock')">STOCK MARKET</button>
+                    <button class="tab-btn" onclick="openTab('minigame')">DOUGH CATCHER</button>
+                    <button class="tab-btn" onclick="openTab('types')">PIZZA TYPES</button>
+                </div>
+                <div id="stock" class="tab-content active-tab">
+                    <div style="color:var(--neon)">Market Status: <span id="market-trend">STABLE</span></div>
+                    <div id="stock-list"></div>
+                </div>
+                <div id="minigame" class="tab-content">
+                    <canvas id="minigame-canvas" width="400" height="130"></canvas>
+                    <p style="font-size:10px; text-align:center;">Click falling dough for bonus pizzas!</p>
+                </div>
+                <div id="types" class="tab-content">
+                    <div id="pizza-type-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="header">EMPIRE UPGRADES</div>
+            <div id="shop-list" class="scroll-area"></div>
+        </div>
+    </div>
+
+<script>
+let state = {
+    pizzas: 0, pps: 0, ppc: 1, debt: 50000000,
+    stocks: [
+        { name: "CrustCo", price: 100, shares: 0, history: [100] },
+        { name: "PepInc", price: 500, shares: 0, history: [500] }
+    ],
+    pizzaTypes: [
+        { name: "Neapolitan", cost: 1000, mult: 1.1, owned: false },
+        { name: "Chicago Deep Dish", cost: 10000, mult: 1.5, owned: false },
+        { name: "New York Slice", cost: 50000, mult: 2.0, owned: false },
+        { name: "The King's Specialty", cost: 1000000, mult: 5.0, owned: false }
+    ],
+    upgrades: [],
+    news: ["Welcome to Pizza City. Stay saucy."],
+    music: false
+};
+
+// --- AUDIO (45s Italian Loop) ---
+const Audio = new (window.AudioContext || window.webkitAudioContext)();
+function playItalianLoop() {
+    if (!state.music) return;
+    let now = Audio.currentTime;
+    const melody = [329, 329, 349, 392, 392, 349, 329, 293, 261, 261, 293, 329, 329, 293, 293];
+    melody.forEach((f, i) => {
+        const osc = Audio.createOscillator();
+        const g = Audio.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(f, now + (i * 0.4));
+        g.gain.setValueAtTime(0.02, now + (i * 0.4));
+        g.gain.exponentialRampToValueAtTime(0.0001, now + (i * 0.4) + 0.3);
+        osc.connect(g); g.connect(Audio.destination);
+        osc.start(now + (i * 0.4)); osc.stop(now + (i * 0.4) + 0.4);
+    });
+    setTimeout(playItalianLoop, 15000); // Repeat sequence
+}
+
+// --- INTRO ---
+const introLines = [
+    "Pizza City. A town built on flour, sweat, and tears.",
+    "You were the best baker in the West Side...",
+    "Until the King Pizza Man invited you to his private table.",
+    "One bad hand of Poker, and you owe him 50 million pizzas.",
+    "The ovens are cold. The King is waiting. Start clicking."
+];
+let iStep = 0;
+function nextIntro() {
+    const el = document.getElementById('intro-content');
+    el.style.opacity = 0;
+    setTimeout(() => {
+        if(iStep < introLines.length) {
+            el.innerText = introLines[iStep++];
+            el.style.opacity = 1;
+            document.getElementById('intro-btn').style.display = "block";
+        } else {
+            document.getElementById('intro-overlay').style.display = "none";
+            document.getElementById('game-container').style.display = "grid";
+            state.music = true; playItalianLoop();
+            initGame();
+        }
+    }, 500);
+}
+
+// --- UPGRADES (70+ Total) ---
+function initGame() {
+    const names = ["Rolling Pin", "Extra Yeast", "Sous Chef", "Brick Oven", "Pizza Bike", "Cheese Shaker", "Dough Hook", "Sauce Vat", "Tomato Farm", "Pepperoni Mine"];
+    for(let i=0; i<70; i++) {
+        let tier = Math.floor(i/7) + 1;
+        state.upgrades.push({
+            name: names[i % names.length] + " Tier " + tier,
+            cost: Math.floor(15 * Math.pow(2.5, i)),
+            pps: (i + 1) * tier,
+            ppc: tier,
+            owned: 0
+        });
+    }
+    renderShop();
+    renderStocks();
+    renderTypes();
+    setInterval(tick, 100);
+    setInterval(updateStocks, 5000);
+    setInterval(spawnDough, 2000);
+    setInterval(generateNews, 10000);
+}
+
+// --- NEWS SYSTEM ---
+const pizzaNews = [
+    "KING PIZZA MAN seen buying a golden yacht shaped like a calzone.",
+    "Cheese prices skyrocket after mysterious cow disappearance.",
+    "Global Pizza News: Italy declares Pineapple on Pizza a legal offense.",
+    "Pizza City Local: Man attempts to marry a deep-dish pizza; ceremony was delicious.",
+    "BREAKING: The King says your progress is 'pathetically slow'.",
+    "Scientists find water on Mars; it tastes like marinara sauce."
+];
+function generateNews() {
+    const n = pizzaNews[Math.floor(Math.random()*pizzaNews.length)];
+    const wire = document.getElementById('news-wire');
+    wire.innerHTML = `<div>[ALERT] ${n}</div>` + wire.innerHTML;
+}
+
+// --- CLICKING ---
+function clickPizza(e) {
+    state.pizzas += state.ppc;
+    const f = document.createElement('div');
+    f.className = 'float';
+    f.style.left = e.clientX + 'px'; f.style.top = e.clientY + 'px';
+    f.innerText = "+"+state.ppc;
+    document.body.appendChild(f);
+    setTimeout(()=>f.remove(), 800);
+    updateUI();
+}
+
+// --- MINIGAME (DOUGH CATCHER) ---
+const canvas = document.getElementById('minigame-canvas');
+const ctx = canvas.getContext('2d');
+let doughs = [];
+function spawnDough() { doughs.push({x: Math.random()*380, y:0, r:10}); }
+canvas.onclick = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left; const my = e.clientY - rect.top;
+    doughs = doughs.filter(d => {
+        const dist = Math.hypot(d.x - mx, d.y - my);
+        if(dist < 20) { state.pizzas += (state.pps * 10) + 10; return false; }
+        return true;
+    });
+};
+
+// --- STOCK MARKET ---
+function updateStocks() {
+    state.stocks.forEach(s => {
+        const change = (Math.random() - 0.5) * 20;
+        s.price = Math.max(10, s.price + change);
+    });
+    renderStocks();
+}
+
+function buyStock(i) {
+    if(state.pizzas >= state.stocks[i].price) {
+        state.pizzas -= state.stocks[i].price;
+        state.stocks[i].shares++;
+        updateUI(); renderStocks();
+    }
+}
+
+function sellStock(i) {
+    if(state.stocks[i].shares > 0) {
+        state.pizzas += state.stocks[i].price;
+        state.stocks[i].shares--;
+        updateUI(); renderStocks();
+    }
+}
+
+// --- RENDERERS ---
+function renderShop() {
+    const shop = document.getElementById('shop-list');
+    shop.innerHTML = state.upgrades.map((u, i) => `
+        <div class="upgrade-card ${state.pizzas >= u.cost ? 'affordable' : 'locked'}" onclick="buyU(${i})">
+            <b>${u.name}</b><br><small>Cost: ${Math.floor(u.cost)} | +${u.pps} PPS</small>
+        </div>
+    `).join('');
+}
+
+function renderStocks() {
+    document.getElementById('stock-list').innerHTML = state.stocks.map((s, i) => `
+        <div style="margin-bottom:5px; font-size:12px;">
+            ${s.name}: 🍕${s.price.toFixed(2)} (Owned: ${s.shares})
+            <button onclick="buyStock(${i})">Buy</button>
+            <button onclick="sellStock(${i})">Sell</button>
+        </div>
+    `).join('');
+}
+
+function renderTypes() {
+    document.getElementById('pizza-type-list').innerHTML = state.pizzaTypes.map((t, i) => `
+        <div class="upgrade-card ${t.owned ? '' : 'affordable'}" onclick="buyType(${i})">
+            <b>${t.name}</b><br><small>${t.owned ? 'ACTIVE' : 'Cost: '+t.cost}</small>
+        </div>
+    `).join('');
+}
+
+function buyU(i) {
+    const u = state.upgrades[i];
+    if(state.pizzas >= u.cost) {
+        state.pizzas -= u.cost;
+        state.pps += u.pps;
+        state.ppc += u.ppc;
+        u.owned++;
+        u.cost *= 1.4;
+        renderShop(); updateUI();
+    }
+}
+
+function buyType(i) {
+    const t = state.pizzaTypes[i];
+    if(!t.owned && state.pizzas >= t.cost) {
+        state.pizzas -= t.cost;
+        t.owned = true;
+        state.ppc *= t.mult;
+        renderTypes(); updateUI();
+    }
+}
+
+function openTab(id) {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active-tab'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(id).classList.add('active-tab');
+    event.currentTarget.classList.add('active');
+}
+
+function updateUI() {
+    document.getElementById('pizzas').innerText = Math.floor(state.pizzas).toLocaleString();
+    document.getElementById('pps').innerText = state.pps.toFixed(1);
+    document.getElementById('ppc').innerText = Math.floor(state.ppc);
+    document.getElementById('debt-display').innerText = Math.max(0, Math.floor(state.debt - state.pizzas)).toLocaleString();
+    document.getElementById('debt-bar').style.width = Math.min(100, (state.pizzas/state.debt)*100) + "%";
+}
+
+function tick() {
+    state.pizzas += state.pps / 10;
+    // Minigame anim
+    ctx.clearRect(0,0,400,130);
+    ctx.fillStyle = "#f1c40f";
+    doughs.forEach(d => {
+        d.y += 2;
+        ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI*2); ctx.fill();
+    });
+    doughs = doughs.filter(d => d.y < 130);
+    updateUI();
+}
+
+window.onload = nextIntro;
+</script>
+</body>
+</html>
